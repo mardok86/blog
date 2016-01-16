@@ -2,9 +2,7 @@ package article
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"os"
 
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx"
@@ -31,20 +29,31 @@ func extractConfig() pgx.ConnConfig {
 
 	return config
 }
+func buildErrorResponse(w http.ResponseWriter, code int, err string) {
+	w.WriteHeader(code)
+	b, _ := json.Marshal(&BlogError{code, err})
+	w.Write(b)
+	return
+}
+
+func JsonMiddleware(f http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		f(w, r)
+	}
+}
 
 func HandleSaveArticle(w http.ResponseWriter, r *http.Request) {
 	article := new(Article)
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&article); err != nil {
-		fmt.Println("Error decode json")
-		os.Exit(1)
+		info := "Invalid JSON"
+		buildErrorResponse(w, http.StatusBadRequest, info)
+		return
 	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	err := article.Create()
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		b, _ := json.Marshal(&BlogError{http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError)})
-		w.Write(b)
+		buildErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	b, _ := json.Marshal(article)
@@ -55,17 +64,12 @@ func HandleLoadArticle(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	article := new(Article)
 	exist, err := article.Read(vars["articleid"])
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	if !exist {
-		w.WriteHeader(http.StatusNotFound)
-		b, _ := json.Marshal(&BlogError{http.StatusBadRequest, err.Error()})
-		w.Write(b)
+		buildErrorResponse(w, http.StatusNotFound, err.Error())
 		return
 	}
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		b, _ := json.Marshal(&BlogError{http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError)})
-		w.Write(b)
+		buildErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	b, _ := json.Marshal(article)
@@ -77,15 +81,13 @@ func HandleUpdateArticle(w http.ResponseWriter, r *http.Request) {
 	article := new(Article)
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&article); err != nil {
-		fmt.Println("Database connection error: ")
-		os.Exit(1)
+		info := "Invalid JSON"
+		buildErrorResponse(w, http.StatusBadRequest, info)
+		return
 	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	err := article.Update(vars["articleid"])
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		b, _ := json.Marshal(&BlogError{http.StatusBadRequest, err.Error()})
-		w.Write(b)
+		buildErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	b, _ := json.Marshal(article)
@@ -96,11 +98,8 @@ func HandleDeleteArticle(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	article := new(Article)
 	err := article.Delete(vars["articleid"])
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		b, _ := json.Marshal(&BlogError{http.StatusBadRequest, err.Error()})
-		w.Write(b)
+		buildErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
